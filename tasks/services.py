@@ -2,6 +2,9 @@ from django.core.exceptions import PermissionDenied
 from django.contrib.auth.models import User
 from .models import Task
 from django.shortcuts import get_object_or_404
+from django.contrib.auth import authenticate
+from graphql_jwt.shortcuts import get_token
+
 
 
 def get_user_tasks(user: User):
@@ -64,3 +67,19 @@ def delete_task(user: User, task_id: int):
 
     task.delete()
     return True
+
+def register_user(username: str, password: str):
+    if User.objects.filter(username=username).exists():
+        raise PermissionDenied("Username already taken")
+
+    user = User.objects.create_user(username=username, password=password)
+    return user
+
+
+def login_user(username: str, password: str):
+    user = authenticate(username=username, password=password)
+    if not user:
+        raise PermissionDenied("Invalid credentials")
+    
+    token = get_token(user)
+    return user, token

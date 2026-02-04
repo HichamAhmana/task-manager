@@ -1,11 +1,15 @@
+# tasks/graphql/mutations.py
 import graphene
-from .Types import TaskType
-from tasks.models import Task
-from ..services import create_task, update_task, delete_task
-from django.core.exceptions import PermissionDenied
-from tasks.GraphQL.Types import TaskType
 from graphql import GraphQLError
+from tasks.GraphQL.Types import TaskType
+from tasks import services
 
+from django.contrib.auth.models import User
+from tasks.services import register_user, login_user
+from tasks.GraphQL.Types import UserType  # We'll create this type next
+# -------------------
+# CREATE TASK
+# -------------------
 class CreateTask(graphene.Mutation):
     task = graphene.Field(TaskType)
 
@@ -14,10 +18,16 @@ class CreateTask(graphene.Mutation):
 
     def mutate(self, info, title):
         user = info.context.user
-        task = create_task(user, title)
+        if user.is_anonymous:
+            raise GraphQLError("You must be logged in to create tasks")
+
+        task = services.create_task(user, title)
         return CreateTask(task=task)
 
 
+# -------------------
+# UPDATE TASK
+# -------------------
 class UpdateTask(graphene.Mutation):
     task = graphene.Field(TaskType)
 
@@ -28,44 +38,81 @@ class UpdateTask(graphene.Mutation):
 
     def mutate(self, info, id, title=None, completed=None):
         user = info.context.user
-        task = update_task(user, id, title, completed)
+        if user.is_anonymous:
+            raise GraphQLError("You must be logged in to update tasks")
+
+        task = services.update_task(user, id, title, completed)
         return UpdateTask(task=task)
 
 
+# -------------------
+# DELETE TASK
+# -------------------
 class DeleteTask(graphene.Mutation):
-    ok = graphene.Boolean()
+    success = graphene.Boolean()
 
     class Arguments:
         id = graphene.ID(required=True)
 
     def mutate(self, info, id):
         user = info.context.user
-        ok = delete_task(user, id)
-        return DeleteTask(ok=ok)
-    
-class UpdateTaskCompleted(graphene.Mutation):
-    class Arguments:
-        task_id = graphene.ID(required=True)
-        completed = graphene.Boolean(required=True)
-
-    task = graphene.Field(TaskType)
-
-    def mutate(self, info, task_id, completed):
-        user = info.context.user
         if user.is_anonymous:
-            raise GraphQLError("Not logged in!")
+            raise GraphQLError("You must be logged in to delete tasks")
 
-        try:
-            task = Task.objects.get(id=task_id, owner=user)
-        except Task.DoesNotExist:
-            raise GraphQLError("Task not found or not yours")
+        services.delete_task(user, id)
+        return DeleteTask(success=True)
 
-        task.completed = completed
-        task.save()
-        return UpdateTaskCompleted(task=task)
 
+# -------------------
+# AGGREGATED MUTATIONS
+# -------------------
 class TaskMutation(graphene.ObjectType):
-    create_task = CreateTask.Field()
-    update_task = UpdateTask.Field()
-    delete_task = DeleteTask.Field()
-    updateTaskCompleted = UpdateTaskCompleted.Field()
+    createTask = CreateTask.Field()
+    updateTask = UpdateTask.Field()
+    deleteTask = DeleteTask.Field()
+
+
+
+# -------------------
+# REGISTER MUTATION
+# -------------------
+class RegisterUser(graphene.Mutation):
+    user = graphene.Field(lambda: UserType)
+
+    class Arguments:
+        username = graphene.String(required=True)
+        password = graphene.String(required=True)
+
+    def mutate(self, info, username, password):
+        try:
+            user = register_user(username, password)
+        except Exception as e:
+            raise GraphQLError(str(e))
+        return RegisterUser(user=user)
+
+
+# -------------------
+# LOGIN MUTATION
+# -------------------
+class LoginUser(graphene.Mutation):
+    user = graphene.Field(lambda: UserType)
+    token = graphene.String()
+
+    class Arguments:
+        username = graphene.String(required=True)
+        password = graphene.String(required=True)
+
+    def mutate(self, info, username, password):
+        try:
+            user, token = login_user(username, password)
+        except Exception as e:
+            raise GraphQLError(str(e))
+        return LoginUser(user=user, token=token)
+
+
+# -------------------
+# AGGREGATED USER MUTATIONS
+# -------------------
+class UserMutation(graphene.ObjectType):
+    registerUser = RegisterUser.Field()
+    loginUser = LoginUser.Field()
