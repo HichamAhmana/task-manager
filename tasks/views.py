@@ -1,3 +1,11 @@
-from django.shortcuts import render
+from django.http import HttpResponse
+from .models import Task
 
-# Create your views here.
+def task_home(request):
+    tasks = Task.objects.all()
+
+    response = ""
+    for task in tasks:
+        response += f"- {task.title}<br>"
+
+    return HttpResponse(response)
