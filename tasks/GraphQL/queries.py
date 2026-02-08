@@ -1,22 +1,14 @@
 import graphene
-from graphene import ObjectType, Field, List, ID
-from .Types import TaskType
-from ..services import get_user_tasks
-from django.core.exceptions import PermissionDenied
+from graphql import GraphQLError
+from tasks.models import Task
+from tasks.GraphQL.Types import TaskType
 
+class TaskQuery(graphene.ObjectType):
+    my_tasks = graphene.List(TaskType)
 
-class TaskQuery(ObjectType):
-    my_tasks = List(TaskType)
-    task = Field(TaskType, id=ID(required=True))
-
-    def resolve_my_tasks(root, info):
+    def resolve_my_tasks(self, info):
         user = info.context.user
-        return get_user_tasks(user)
+        if user.is_anonymous:
+            raise GraphQLError("You must be logged in to view tasks")
 
-    def resolve_task(root, info, id):
-        user = info.context.user
-        tasks = get_user_tasks(user)
-        try:
-            return tasks.get(id=id)
-        except tasks.model.DoesNotExist:
-            raise PermissionDenied("Task not found or access denied")
+        return Task.objects.filter(owner=user)
